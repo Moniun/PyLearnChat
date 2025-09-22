@@ -46,7 +46,7 @@ def start_backend_if_needed(config):
     )
     
     # 增强的等待逻辑
-    max_wait_time = 60  # 增加到30秒
+    max_wait_time = 60  # 增加到60秒
     print(f"等待后端服务初始化，最多等待{max_wait_time}秒...")
     start_time = time.time()
     retry_interval = 1

@@ -111,7 +111,7 @@ class PythonEducationSystemGradio:
                 response = requests.post(
                     f"{self.api_url}/query",
                     json={"query": user_message},
-                    timeout=60  # 可以根据需要调整超时时间
+                    timeout=600  # 可以根据需要调整超时时间
                 )
 
                 if response.status_code == 200:
@@ -165,7 +165,7 @@ class PythonEducationSystemGradio:
                 response = requests.post(
                     f"{self.api_url}/execute_code",
                     json={"code": code},
-                    timeout=60
+                    timeout=600
                 )
                 
                 if response.status_code == 200:
@@ -198,54 +198,231 @@ class PythonEducationSystemGradio:
     
     def create_interface(self):
         """创建Gradio界面"""
-        with gr.Blocks(title="Python编程教育系统", theme=gr.themes.Soft()) as interface:
-            gr.Markdown("""
-            # Python编程教育系统
-            左侧为对话区域，右侧为代码编辑器区域
-            
-            **注意：** 对话和代码执行不能同时进行，请等待当前任务完成后再执行新任务
-            """)
-            
-            # 创建左右布局
-            with gr.Row():
+        
+        with gr.Blocks(title="PyLearnChat", theme=gr.themes.Soft()) as interface:
+            # 创建标题区域
+            with gr.Row(elem_id="title-container"):
+                # 将标题放在Gradio界面内部的顶部
+                title_markdown = gr.Markdown("""
+                # PyLearnChat
+                """, elem_id="external-title")
+            # 创建左右布局，使用flex容器确保底部对齐
+            with gr.Row(elem_id="main-content-container"):
                 # 左侧：对话区域
                 with gr.Column(scale=1):
                     chatbot = gr.Chatbot(
                         value=self.chat_history,
                         label="对话历史",
-                        height=500
+                        height=450,  # 减小高度以适应屏幕
+                        elem_id="custom-chatbot"  # 添加ID用于自定义CSS
                     )
                     
-                    with gr.Row():
+                    # 创建带悬浮按钮的输入区域
+                    with gr.Row(elem_id="chat-input-container"):
                         message = gr.Textbox(
-                            placeholder="输入你的问题或指令...",
+                            placeholder="有问题，尽管问",
                             show_label=False,
-                            scale=4
+                            scale=1,
+                            container=False,  # 不使用默认容器
+                            lines=5,  # 增加高度为原来的2.5倍（假设原来约为2行）
+                            submit_btn=None
                         )
-                        upload_button = gr.UploadButton(
-                            "上传文件",
+                        # 将按钮添加到同一个容器中
+                        submit_button = gr.Button(
+                            "▶️",
+                            variant="primary",
+                            elem_id="floating-submit-btn"
+                        )
+                        upload_file_button = gr.UploadButton(
+                            "📁",
                             file_types=[".py", ".txt"],
                             file_count="single",
-                            scale=1
+                            elem_id="floating-file-btn"
                         )
-                        submit_button = gr.Button("发送", scale=1)
+                        upload_image_button = gr.UploadButton(
+                            "🖼️",
+                            file_types=[".jpg", ".jpeg", ".png", ".gif"],
+                            file_count="single",
+                            elem_id="floating-image-btn"
+                        )
                 
                 # 右侧：代码执行区域
                 with gr.Column(scale=1):
-                    code_input = gr.Code(
-                        language="python",
-                        label="Python代码编辑器",
-                        value="# 在这里输入Python代码\nprint('Hello, Python!')\n",
-                        lines=15
-                    )
-                    
-                    run_button = gr.Button("运行代码")
+                    # 创建带悬浮按钮的代码输入区域
+                    with gr.Row(elem_id="code-input-container"):
+                        code_input = gr.Code(
+                            language="python",
+                            label="Python代码编辑器",
+                            value="# 在这里输入Python代码\nprint('Hello, Python!')\n",
+                            lines=12,  # 减小行数以适应屏幕
+                            scale=1,
+                            interactive=True
+                        )
+                        run_button = gr.Button(
+                            "▶️",
+                            variant="primary",
+                            elem_id="floating-run-btn"
+                        )
                     
                     code_output = gr.Textbox(
                         label="执行结果",
                         lines=10,
                         interactive=False
                     )
+            
+            # 添加自定义CSS样式
+            gr.HTML("""
+            <style>
+                /* 确保整个界面在屏幕内显示 */
+                .gradio-container { max-width: 100% !important; }
+                
+                /* 标题容器样式 */
+                #title-container {
+                    width: 100%;
+                    margin-bottom: 10px;
+                    justify-content: center;
+                    display: flex;
+                }
+                
+                /* 外部标题样式 */
+                #external-title {
+                    text-align: center;
+                    margin: 0 auto;
+                    padding: 6px 20px;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white !important;
+                    border-radius: 8px;
+                    width: auto;
+                    display: inline-block;
+                    font-weight: bold;
+                    font-size: 20px !important;
+                }
+                
+                /* 确保标题文本颜色正确 */
+                #external-title h1 {
+                    color: white !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    line-height: 1.2 !important;
+                }
+                
+                /* 主内容容器样式 - 确保底部对齐 */
+                #main-content-container {
+                    display: flex;
+                    width: 100%;
+                    height: calc(100vh - 120px);
+                }
+                
+                /* 左侧和右侧列样式 - 确保底部对齐 */
+                #main-content-container .column {
+                    display: flex;
+                    flex-direction: column;
+                }
+                
+                /* 确保整个页面没有滚动条 */
+                body {
+                    overflow: hidden;
+                }
+                
+                /* 确保Gradio容器适应屏幕 */
+                .gradio-container {
+                    min-height: 100vh;
+                    height: 100vh;
+                    max-height: 100vh;
+                }
+                
+                /* 调整代码输出框高度以确保底部对齐 */
+                textarea[data-testid="textbox"] {
+                    height: auto !important;
+                }
+                
+                /* 输入框容器样式 */
+                #chat-input-container {
+                    position: relative;
+                    width: 100%;
+                }
+                
+                /* 聊天输入框样式 */
+                #chat-input-container textarea {
+                    width: 100%;
+                    padding-right: 100px;  /* 为悬浮按钮留出空间 */
+                    border-radius: 12px;
+                    border: 1px solid #ddd;
+                    padding: 10px 100px 10px 10px;
+                    resize: none;
+                    min-height: 100px;
+                }
+                
+                /* 圆形悬浮按钮通用样式 */
+                #floating-submit-btn, #floating-file-btn, #floating-image-btn, #floating-run-btn {
+                    position: absolute;
+                    width: 36px !important;
+                    height: 36px !important;
+                    min-width: unset !important;
+                    border-radius: 50% !important;
+                    padding: 0 !important;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+                    z-index: 10;
+                }
+                
+                /* 聊天区域悬浮按钮定位 - 全部放在右下角 */
+                #floating-submit-btn {
+                    right: 10px;
+                    bottom: 10px;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+                }
+                
+                #floating-file-btn {
+                    right: 50px;
+                    bottom: 10px;
+                    background: #4CAF50 !important;
+                }
+                
+                #floating-image-btn {
+                    right: 90px;
+                    bottom: 10px;
+                    background: #2196F3 !important;
+                }
+                
+                /* 代码输入区域样式 */
+                #code-input-container {
+                    position: relative;
+                    width: 100%;
+                }
+                
+                /* 代码运行按钮定位 - 放在右下角 */
+                #floating-run-btn {
+                    right: 10px;
+                    bottom: 10px;
+                    background: linear-gradient(135deg, #FF9A9E 0%, #FAD0C4 99%, #FAD0C4 100%) !important;
+                }
+                
+                /* 代码输入框添加滚动条 */
+                .gradio-container .code-editor-container {
+                    max-height: 320px !important;
+                    overflow: auto !important;
+                    border-radius: 8px !important;
+                }
+                
+                /* 确保代码编辑器内容可滚动 */
+                .gradio-container pre {
+                    overflow: auto !important;
+                }
+                
+                /* 调整对话框字体大小 */
+                #custom-chatbot .message { font-size: 14px; }
+                
+                /* 为对话框添加滚动条 */
+                #custom-chatbot { overflow-y: auto; }
+                
+                /* 隐藏滚动条但保留功能 */
+                .scroll-hide::-webkit-scrollbar { display: none; }
+                .scroll-hide { -ms-overflow-style: none; scrollbar-width: none; }
+            </style>
+            """)
             
             # 设置按钮点击事件 - 添加message作为outputs以实现输入框清空
             submit_button.click(
@@ -254,9 +431,17 @@ class PythonEducationSystemGradio:
                 outputs=[chatbot, message]
             )
             
-            upload_button.upload(
+            # 文件上传按钮事件绑定
+            upload_file_button.upload(
                 fn=self.handle_chat,
-                inputs=[message, chatbot, upload_button],
+                inputs=[message, chatbot, upload_file_button],
+                outputs=[chatbot, message]
+            )
+            
+            # 图片上传按钮事件绑定
+            upload_image_button.upload(
+                fn=self.handle_chat,
+                inputs=[message, chatbot, upload_image_button],
                 outputs=[chatbot, message]
             )
             
@@ -270,12 +455,6 @@ class PythonEducationSystemGradio:
                 fn=self.execute_code,
                 inputs=[code_input, chatbot],
                 outputs=[code_input, code_output, chatbot]
-            )
-            
-            # 状态显示
-            status_msg = gr.Markdown(
-                value="""**系统状态:** 就绪
-                请确保后端服务已启动"""
             )
         
         return interface
