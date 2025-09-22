@@ -4,6 +4,8 @@
 
 该系统专为Python编程学习者设计，能够提供实时代码执行环境、生成个性化测验题目、解释编程概念，并通过RAG技术提供基于知识库的精准回答。系统后端采用FastAPI构建，前端使用Gradio框架，提供直观易用的用户界面。
 
+系统包含完善的API密钥保护机制，通过环境变量和专用配置文件隔离敏感信息，确保密钥安全。
+
 ## 系统架构
 
 本系统采用模块化设计，主要包含以下几个核心模块：
@@ -63,32 +65,58 @@ pip install -r requirements.txt
 
 ### 配置系统
 
-1. 项目已包含`config.yaml`配置文件
-2. 编辑配置文件，设置API密钥等信息
+#### API密钥保护机制
 
-```yaml
-llm:
-  api_key: "your-deepseek-api-key-here"
-  api_base: "https://api.deepseek.com"
-  model_name: "deepseek-chat"
-  temperature: 0.7
-  max_tokens: 1000
-rag:
-  vector_store_path: "./data/vector_store"
-  chunk_size: 500
-  chunk_overlap: 50
-  embedding_model: "m3e-base"
-api_port: 8888
-debug: false
-data_dir: "./data"
-models_dir: "./models"
-allowed_functions:
-- execute_code
-- search_knowledge
-- generate_quiz
-- check_answer
-- explain_concept
-```
+为了保护敏感的API密钥信息，系统采用了多层次的安全保护机制：
+
+1. **环境变量优先级** - 系统会优先从环境变量中读取API密钥，避免在代码中硬编码
+2. **专用配置文件** - 敏感信息存储在独立的`.env`文件中，该文件不应提交到代码仓库
+3. **配置文件安全** - 即使在`config.yaml`中配置了API密钥，环境变量中的值仍会覆盖它
+
+#### 配置步骤
+
+1. **创建.env文件**
+
+   在项目根目录创建一个`.env`文件，格式如下：
+   ```env
+   # .env 文件 - 存储敏感配置信息
+   # 注意：此文件不应提交到代码仓库
+   
+   # 大语言模型API密钥
+   LLM_API_KEY=your-api-key-here
+   
+   # 可以添加其他环境变量
+   # LLM_MODEL_NAME=deepseek-chat
+   # LLM_TEMPERATURE=0.7
+   ```
+
+2. **配置config.yaml**
+
+   项目已包含`config.yaml`配置文件，主要用于非敏感配置：
+   ```yaml
+   llm:
+     model_name: "deepseek-chat"
+     api_base: "https://api.deepseek.com"
+     temperature: 0.7
+     max_tokens: 1000
+   rag:
+     vector_store_path: "./data/vector_store"
+     chunk_size: 500
+     chunk_overlap: 50
+     embedding_model: "m3e-base"
+   api_port: 8888
+   debug: false
+   data_dir: "./data"
+   models_dir: "./models"
+   allowed_functions:
+   - execute_code
+   - search_knowledge
+   - generate_quiz
+   - check_answer
+   - explain_concept
+   ```
+
+   > 注意：由于系统会优先从环境变量读取API密钥，您可以在`config.yaml`中省略`api_key`字段，或仅保留占位符。
 
 ### 启动系统
 
@@ -196,12 +224,27 @@ curl -X POST "http://localhost:8888/query" \n  -H "Content-Type: application/jso
 
 ## 安全注意事项
 
-1. **代码执行安全** - 系统使用了Python内置的`subprocess`模块在独立进程中执行代码，并设置了超时机制（默认为30秒），有效防止恶意代码长时间运行。
-2. **输入验证** - 系统对所有用户输入进行验证和清理，防止注入攻击。
-3. **资源限制** - 代码执行器对内存使用和CPU时间进行监控，防止资源滥用。
-4. **日志监控** - 系统记录所有代码执行操作和API调用，便于审计和问题排查。
-5. **生产环境建议** - 在生产环境中，建议进一步加强安全措施，如添加防火墙规则、实施细粒度的访问控制、定期更新系统依赖等。
-6. **网络安全** - 默认情况下，系统只绑定到localhost（127.0.0.1），如需公开访问，请确保配置了适当的安全措施。
+### API密钥安全
+
+1. **环境变量存储** - 敏感的API密钥应存储在`.env`文件中，而不是直接写入代码或配置文件
+2. **配置文件保护** - 即使在配置文件中设置了API密钥，系统仍会优先使用环境变量中的值
+3. **版本控制排除** - `.env`文件应添加到`.gitignore`中，避免将敏感信息提交到代码仓库
+4. **权限管理** - 确保`.env`文件的权限设置正确，仅允许必要的用户访问
+
+### 代码执行安全
+
+1. **隔离执行环境** - 系统使用Python内置的`subprocess`模块在独立进程中执行代码，并设置了超时机制（默认为30秒），有效防止恶意代码长时间运行
+2. **输入验证** - 系统对所有用户输入进行验证和清理，防止注入攻击
+3. **资源限制** - 代码执行器对内存使用和CPU时间进行监控，防止资源滥用
+4. **日志监控** - 系统记录所有代码执行操作和API调用，便于审计和问题排查
+
+### 生产环境建议
+
+1. **访问控制** - 实施细粒度的访问控制，限制对系统的访问
+2. **网络安全** - 默认情况下，系统只绑定到localhost（127.0.0.1），如需公开访问，请确保配置了适当的安全措施，如添加防火墙规则
+3. **定期更新** - 定期更新系统依赖，确保使用最新的安全补丁
+4. **备份机制** - 实施数据备份机制，防止数据丢失
+5. **监控告警** - 建立完善的监控和告警机制，及时发现和处理安全问题
 
 ## 扩展开发
 
@@ -254,8 +297,11 @@ python fix_code_update_issue.py
    - 查看日志文件了解详细错误信息
 
 3. **API密钥错误**
-   - 确认`config.yaml`中的API密钥是否正确
+   - 确认`.env`文件中设置了正确的`LLM_API_KEY`环境变量
+   - 检查`.env`文件的格式是否正确（无引号、无空格）
+   - 验证环境变量是否被正确加载：系统会优先使用`.env`中的值，即使在`config.yaml`中设置了API密钥
    - 检查网络连接，确保能够访问大模型API服务
+   - 确认API密钥是否过期或被限制使用
 
 4. **Gradio界面问题**
    - 确认所有依赖已正确安装（运行`pip install -r requirements.txt`）
