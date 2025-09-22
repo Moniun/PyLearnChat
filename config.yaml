@@ -1,0 +1,21 @@
+llm:
+  api_key: ""  # 实际API密钥从.env文件或环境变量加载
+  model_name: "deepseek-chat"
+  temperature: 0.7
+  max_tokens: 1000
+  base_url: "https://api.deepseek.com/v1"  # DeepSeek API的示例base_url
+rag:
+  vector_store_path: "./data/vector_store"
+  chunk_size: 500
+  chunk_overlap: 50
+  embedding_model: "text-embedding-ada-002"
+api_port: 8888
+debug: false
+data_dir: "./data"
+models_dir: "./models"
+allowed_functions:
+  - "execute_code"
+  - "generate_quiz"
+  - "check_answer"
+  - "explain_concept"
+  - "search_knowledge"
