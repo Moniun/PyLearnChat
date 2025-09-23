@@ -144,7 +144,7 @@ class PythonEducationSystem:
             # 调用LLM生成测验
             prompt = f"""
             为学习Python编程的学生生成{num_questions}道关于{topic}的测验题，难度为{difficulty}。
-            请提供问题、选项（如果是选择题）、正确答案和解释。
+            请提供问题、选项（如果是选择题）、正确答案和解释。如果用户没有要求，请不要直接给出解释和答案。
             
             相关知识参考：
             {context}
@@ -277,7 +277,7 @@ class PythonEducationSystem:
                 "error": str(e)
             }
             
-    def stream_query(self, query: str):
+    def stream_query(self, query: str, request_id: str = None):
         """流式处理用户查询"""
         try:
             # 使用RAG检索相关知识
@@ -288,8 +288,24 @@ class PythonEducationSystem:
             user_prompt = f"问题: {query}\n\n相关知识参考: {context}"
             
             # 使用流式生成响应
-            for chunk in self.llm_client.stream_generate(user_prompt, system_prompt):
+            for chunk in self.llm_client.stream_generate(user_prompt, system_prompt, request_id):
                 yield chunk
         except Exception as e:
             self.logger.error(f"流式处理查询失败: {e}")
             yield f"生成响应失败: {str(e)}"
+            
+    def abort_stream(self, request_id: str = None):
+        """中止流式输出"""
+        try:
+            result = self.llm_client.set_abort_flag(True, request_id)
+            self.logger.info(f"尝试中止流式输出: {result}, 请求ID: {request_id}")
+            return {
+                "success": result,
+                "message": "已发送中止请求" if result else "未找到对应的请求"
+            }
+        except Exception as e:
+            self.logger.error(f"中止流式输出失败: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }

@@ -32,6 +32,11 @@ class PythonEducationSystemGradio:
         self.current_task = None
         self.task_start_time = None
         
+        # 流式输出中止控制
+        self.abort_flag = False
+        self.abort_lock = threading.Lock()
+        self.current_request_id = None
+        
         # 初始化对话历史
         self.chat_history = []
         
@@ -68,6 +73,38 @@ class PythonEducationSystemGradio:
         self.task_lock.release()
         self.current_task = None
         self.task_start_time = None
+    
+    def set_abort_flag(self, flag):
+        """设置中止标志"""
+        with self.abort_lock:
+            self.abort_flag = flag
+    
+    def get_abort_flag(self):
+        """获取中止标志"""
+        with self.abort_lock:
+            return self.abort_flag
+    
+    def abort_stream(self, history, message):
+        """中止流式输出"""
+        # 发送中止请求到后端
+        try:
+            response = requests.post(
+                f"{self.api_url}/abort_stream",
+                json={"request_id": self.current_request_id},
+                timeout=5
+            )
+            if response.status_code == 200:
+                result = response.json()
+                self.logger.info(f"中止流式输出: {result}")
+            else:
+                self.logger.error(f"中止请求失败: {response.status_code}, {response.text}")
+        except Exception as e:
+            self.logger.error(f"中止请求异常: {e}")
+        
+        # 设置本地中止标志
+        self.set_abort_flag(True)
+        # 返回当前历史和空消息，不改变界面状态
+        return history, message
     
     def handle_chat(self, message, history, uploaded_file=None):
         """处理对话消息（流式显示）"""
@@ -110,44 +147,57 @@ class PythonEducationSystemGradio:
             try:
                 # 初始化完整响应
                 bot_response = ""
+                # 重置中止标志
+                self.set_abort_flag(False)
+                # 生成请求ID
+                import uuid
+                self.current_request_id = str(uuid.uuid4())
                 
                 # 使用流式请求
                 with requests.post(
                     f"{self.api_url}/stream_query",
-                    json={"query": user_message},
+                    json={"query": user_message, "request_id": self.current_request_id},
                     stream=True,  # 启用流式响应
                     timeout=600   # 可以根据需要调整超时时间
                 ) as response:
                     if response.status_code == 200:
-                        # 逐行处理流式响应
-                        for line in response.iter_lines():
-                            if line:
-                                # 解码并处理数据行
-                                decoded_line = line.decode('utf-8')
-                                # 跳过非数据行
-                                if decoded_line.startswith('data:'):
-                                    # 提取JSON部分
-                                    data_part = decoded_line[5:].strip()
-                                    try:
-                                        data = json.loads(data_part)
-                                        # 处理内容块
-                                        if 'content' in data:
-                                            bot_response += data['content']
-                                            # 返回当前部分响应，实现逐步显示
-                                            history[-1][1] = bot_response
-                                            # 使用yield来实现流式返回
-                                            yield history, ""
-                                        # 检查是否完成
-                                        elif 'done' in data and data['done']:
-                                            break
-                                        # 处理错误
-                                        elif 'error' in data:
-                                            bot_response = data['error']
-                                            history[-1][1] = bot_response
-                                            yield history, ""
-                                            break
-                                    except json.JSONDecodeError:
-                                        self.logger.error(f"解析流式响应失败: {data_part}")
+                            # 逐行处理流式响应
+                            for line in response.iter_lines():
+                                # 检查中止标志
+                                if self.get_abort_flag():
+                                    bot_response += "\n\n[系统提示] 输出已中止"
+                                    history[-1][1] = bot_response
+                                    yield history, ""
+                                    self.logger.info("流式输出被用户中止")
+                                    break
+                                
+                                if line:
+                                    # 解码并处理数据行
+                                    decoded_line = line.decode('utf-8')
+                                    # 跳过非数据行
+                                    if decoded_line.startswith('data:'):
+                                        # 提取JSON部分
+                                        data_part = decoded_line[5:].strip()
+                                        try:
+                                            data = json.loads(data_part)
+                                            # 处理内容块
+                                            if 'content' in data:
+                                                bot_response += data['content']
+                                                # 返回当前部分响应，实现逐步显示
+                                                history[-1][1] = bot_response
+                                                # 使用yield来实现流式返回
+                                                yield history, ""
+                                            # 检查是否完成
+                                            elif 'done' in data and data['done']:
+                                                break
+                                            # 处理错误
+                                            elif 'error' in data:
+                                                bot_response = data['error']
+                                                history[-1][1] = bot_response
+                                                yield history, ""
+                                                break
+                                        except json.JSONDecodeError:
+                                            self.logger.error(f"解析流式响应失败: {data_part}")
                     else:
                         bot_response = f"API请求失败，状态码: {response.status_code}"
                         self.logger.error(f"API请求失败: {response.text}")
@@ -274,6 +324,12 @@ class PythonEducationSystemGradio:
                             file_count="single",
                             elem_id="floating-image-btn"
                         )
+                        # 添加中止按钮
+                        abort_button = gr.Button(
+                            "⏹️",
+                            variant="stop",
+                            elem_id="floating-abort-btn"
+                        )
                 
                 # 右侧：代码执行区域
                 with gr.Column(scale=1):
@@ -383,7 +439,7 @@ class PythonEducationSystemGradio:
                 }
                 
                 /* 圆形悬浮按钮通用样式 */
-                #floating-submit-btn, #floating-file-btn, #floating-image-btn, #floating-run-btn {
+                #floating-submit-btn, #floating-file-btn, #floating-image-btn, #floating-run-btn, #floating-abort-btn {
                     position: absolute;
                     width: 36px !important;
                     height: 36px !important;
@@ -401,19 +457,25 @@ class PythonEducationSystemGradio:
                 #floating-submit-btn {
                     right: 10px;
                     bottom: 10px;
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+                    background: white !important;
                 }
                 
                 #floating-file-btn {
                     right: 50px;
                     bottom: 10px;
-                    background: #4CAF50 !important;
+                    background: white !important;
                 }
                 
                 #floating-image-btn {
                     right: 90px;
                     bottom: 10px;
-                    background: #2196F3 !important;
+                    background: white !important;
+                }
+                
+                #floating-abort-btn {
+                    right: 130px;
+                    bottom: 10px;
+                    background: white !important;
                 }
                 
                 /* 代码输入区域样式 */
@@ -426,7 +488,7 @@ class PythonEducationSystemGradio:
                 #floating-run-btn {
                     right: 10px;
                     bottom: 10px;
-                    background: linear-gradient(135deg, #FF9A9E 0%, #FAD0C4 99%, #FAD0C4 100%) !important;
+                    background: white !important;
                 }
                 
                 /* 代码输入框添加滚动条 */
@@ -453,31 +515,73 @@ class PythonEducationSystemGradio:
             </style>
             """)
             
-            # 设置按钮点击事件 - 添加message作为outputs以实现输入框清空
+            # 添加按钮状态控制
+            button_state = gr.State(value="normal")
+            
+            # 更新按钮状态的函数
+            def start_interaction():
+                return "abort", gr.update(value="⏹️", variant="stop", elem_classes=["aborting"])
+            
+            def complete_interaction():
+                return "normal", gr.update(value="▶️", variant="primary", elem_classes=[])
+            
+            # 设置按钮点击事件 - 添加状态控制
             submit_button.click(
+                fn=start_interaction,
+                outputs=[button_state, submit_button]
+            ).then(
                 fn=self.handle_chat,
                 inputs=[message, chatbot],
+                outputs=[chatbot, message]
+            ).then(
+                fn=complete_interaction,
+                outputs=[button_state, submit_button]
+            )
+            
+            # 中止按钮点击事件
+            abort_button.click(
+                fn=self.abort_stream,
+                inputs=[chatbot, message],
                 outputs=[chatbot, message]
             )
             
             # 文件上传按钮事件绑定
             upload_file_button.upload(
+                fn=start_interaction,
+                outputs=[button_state, submit_button]
+            ).then(
                 fn=self.handle_chat,
                 inputs=[message, chatbot, upload_file_button],
                 outputs=[chatbot, message]
+            ).then(
+                fn=complete_interaction,
+                outputs=[button_state, submit_button]
             )
             
             # 图片上传按钮事件绑定
             upload_image_button.upload(
+                fn=start_interaction,
+                outputs=[button_state, submit_button]
+            ).then(
                 fn=self.handle_chat,
                 inputs=[message, chatbot, upload_image_button],
                 outputs=[chatbot, message]
+            ).then(
+                fn=complete_interaction,
+                outputs=[button_state, submit_button]
             )
             
+            # 对于Enter键提交消息的处理
             message.submit(
+                fn=start_interaction,
+                outputs=[button_state, submit_button]
+            ).then(
                 fn=self.handle_chat,
                 inputs=[message, chatbot],
                 outputs=[chatbot, message]
+            ).then(
+                fn=complete_interaction,
+                outputs=[button_state, submit_button]
             )
             
             run_button.click(

@@ -3,6 +3,7 @@
 
 import os
 import asyncio
+import threading
 from typing import Dict, List, Any, Optional, Tuple
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import (
@@ -44,6 +45,12 @@ class LLMClient:
             self.logger.info(f"使用自定义base_url: {config.base_url}")
         
         self.llm = ChatOpenAI(**chat_params)
+        
+        # 流式输出中止控制
+        self.abort_flag = False
+        self.abort_lock = threading.Lock()
+        self.request_id = None
+        self.request_lock = threading.Lock()
     
     def generate(self, prompt: str, system_prompt: str = "") -> str:
         """生成文本响应"""
@@ -66,9 +73,32 @@ class LLMClient:
             self.logger.error(f"LLM生成失败: {e}")
             return f"生成响应失败: {str(e)}"
     
-    def stream_generate(self, prompt: str, system_prompt: str = ""):
+    def set_abort_flag(self, flag: bool, request_id: str = None):
+        """设置中止标志"""
+        with self.abort_lock:
+            if request_id is None or self.request_id == request_id:
+                self.abort_flag = flag
+                self.logger.info(f"设置中止标志: {flag}, 请求ID: {request_id}")
+                return True
+            return False
+    
+    def get_abort_flag(self) -> bool:
+        """获取中止标志"""
+        with self.abort_lock:
+            return self.abort_flag
+    
+    def set_request_id(self, request_id: str):
+        """设置当前请求ID"""
+        with self.request_lock:
+            self.request_id = request_id
+    
+    def stream_generate(self, prompt: str, system_prompt: str = "", request_id: str = None):
         """流式生成文本响应"""
         try:
+            # 设置请求ID和重置中止标志
+            self.set_request_id(request_id)
+            self.set_abort_flag(False, request_id)
+            
             messages = []
             
             # 添加系统提示
@@ -80,12 +110,21 @@ class LLMClient:
             
             # 流式调用LLM生成响应
             for chunk in self.llm.stream(messages):
+                # 检查中止标志
+                if self.get_abort_flag():
+                    self.logger.info("流式生成被中止")
+                    yield "[系统提示] 输出已中止"
+                    break
+                
                 if chunk.content:
                     yield chunk.content
             
         except Exception as e:
             self.logger.error(f"LLM流式生成失败: {e}")
             yield f"生成响应失败: {str(e)}"
+        finally:
+            # 重置中止标志
+            self.set_abort_flag(False, request_id)
     
 
     

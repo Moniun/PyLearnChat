@@ -7,7 +7,7 @@ import json
 from typing import Dict, List, Any, Optional, Generator
 import uvicorn
 from fastapi import FastAPI, HTTPException, Depends, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
@@ -26,9 +26,15 @@ class QueryRequest(BaseModel):
     query: str = Field(..., description="用户查询")
 
 
+class AbortRequest(BaseModel):
+    request_id: Optional[str] = Field(None, description="要中止的请求ID")
+
+
 # 全局变量存储教育系统实例
 _education_system = None
 _config = None
+# 全局日志器
+logger = get_logger("api_server")
 
 
 @asynccontextmanager
@@ -93,6 +99,9 @@ def create_app(education_system: PythonEducationSystem, config: SystemConfig) ->
     async def query(request: QueryRequest):
         """处理用户查询请求"""
         try:
+            if not _education_system:
+                raise HTTPException(status_code=503, detail="系统未初始化")
+            
             response = await _education_system.handle_query(request.query)
             return JSONResponse(content=response)
         except Exception as e:
@@ -115,6 +124,25 @@ def create_app(education_system: PythonEducationSystem, config: SystemConfig) ->
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
         
         return StreamingResponse(event_generator(), media_type="text/event-stream")
+    
+    # 中止流式输出端点
+    @app.post("/abort_stream")
+    async def abort_stream(request: AbortRequest):
+        """中止正在进行的流式输出"""
+        try:
+            if not _education_system:
+                raise HTTPException(status_code=503, detail="系统未初始化")
+            
+            result = _education_system.abort_stream(request.request_id)
+            if result.get("success"):
+                return JSONResponse(content=result)
+            else:
+                raise HTTPException(status_code=400, detail=result.get("error", "中止失败"))
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"中止流式输出失败: {e}")
+            raise HTTPException(status_code=500, detail=f"中止处理失败: {str(e)}")
     
     # 健康检查端点
     @app.get("/health")
