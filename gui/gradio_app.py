@@ -70,7 +70,7 @@ class PythonEducationSystemGradio:
         self.task_start_time = None
     
     def handle_chat(self, message, history, uploaded_file=None):
-        """处理对话消息"""
+        """处理对话消息（流式显示）"""
         # 尝试获取任务锁
         acquired, task_message = self.acquire_task_lock("对话")
         if not acquired:
@@ -106,43 +106,72 @@ class PythonEducationSystemGradio:
             # 添加到对话历史
             history.append([display_message, None])
             
-            # 调用API处理查询
+            # 调用API处理查询 - 流式
             try:
-                response = requests.post(
-                    f"{self.api_url}/query",
+                # 初始化完整响应
+                bot_response = ""
+                
+                # 使用流式请求
+                with requests.post(
+                    f"{self.api_url}/stream_query",
                     json={"query": user_message},
-                    timeout=600  # 可以根据需要调整超时时间
-                )
-
-                if response.status_code == 200:
-                    try:
-                        response_json = response.json()
-                        # 安全地获取响应内容
-                        if response_json.get("success"):
-                            bot_response = response_json.get("response", "抱歉，无法获取响应")
-                        else:
-                            bot_response = response_json.get("error", "服务器处理失败")
-                    except json.JSONDecodeError:
-                        bot_response = "无法解析服务器响应格式"
-                        self.logger.error(f"解析响应格式失败: {response.text}")
-                else:
-                    bot_response = f"API请求失败，状态码: {response.status_code}"
-                    self.logger.error(f"API请求失败: {response.text}")
+                    stream=True,  # 启用流式响应
+                    timeout=600   # 可以根据需要调整超时时间
+                ) as response:
+                    if response.status_code == 200:
+                        # 逐行处理流式响应
+                        for line in response.iter_lines():
+                            if line:
+                                # 解码并处理数据行
+                                decoded_line = line.decode('utf-8')
+                                # 跳过非数据行
+                                if decoded_line.startswith('data:'):
+                                    # 提取JSON部分
+                                    data_part = decoded_line[5:].strip()
+                                    try:
+                                        data = json.loads(data_part)
+                                        # 处理内容块
+                                        if 'content' in data:
+                                            bot_response += data['content']
+                                            # 返回当前部分响应，实现逐步显示
+                                            history[-1][1] = bot_response
+                                            # 使用yield来实现流式返回
+                                            yield history, ""
+                                        # 检查是否完成
+                                        elif 'done' in data and data['done']:
+                                            break
+                                        # 处理错误
+                                        elif 'error' in data:
+                                            bot_response = data['error']
+                                            history[-1][1] = bot_response
+                                            yield history, ""
+                                            break
+                                    except json.JSONDecodeError:
+                                        self.logger.error(f"解析流式响应失败: {data_part}")
+                    else:
+                        bot_response = f"API请求失败，状态码: {response.status_code}"
+                        self.logger.error(f"API请求失败: {response.text}")
+                        history[-1][1] = bot_response
+                        yield history, ""
 
             except requests.exceptions.Timeout:
                 bot_response = "请求超时，请稍后再试。如果频繁超时，可能是工具执行时间过长。"
-                self.logger.error(f"请求超时: {self.api_url}/query")
+                self.logger.error(f"请求超时: {self.api_url}/stream_query")
+                history[-1][1] = bot_response
+                yield history, ""
             except requests.exceptions.ConnectionError:
                 bot_response = "无法连接到服务器，请确认后端服务是否正常运行。"
-                self.logger.error(f"连接错误: {self.api_url}/query")
+                self.logger.error(f"连接错误: {self.api_url}/stream_query")
+                history[-1][1] = bot_response
+                yield history, ""
             except Exception as e:
                 bot_response = f"请求处理失败: {str(e)}"
                 self.logger.error(f"请求处理失败: {e}")
+                history[-1][1] = bot_response
+                yield history, ""
             
-            # 更新对话历史
-            history[-1][1] = bot_response
-            # 返回更新后的历史和空字符串（用于清空输入框）
-            return history, ""
+            # 确保最后一次返回完整的历史
+            yield history, ""
         finally:
             # 释放任务锁
             self.release_task_lock()

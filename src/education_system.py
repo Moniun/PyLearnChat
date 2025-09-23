@@ -276,3 +276,20 @@ class PythonEducationSystem:
                 "success": False,
                 "error": str(e)
             }
+            
+    def stream_query(self, query: str):
+        """流式处理用户查询"""
+        try:
+            # 使用RAG检索相关知识
+            context = self.rag_manager.retrieve(query, k=3)
+            
+            # 构造系统提示和用户提示
+            system_prompt = "你是一个Python编程教育助手。请根据用户的问题和提供的上下文，使用简单易懂的语言回答问题。"
+            user_prompt = f"问题: {query}\n\n相关知识参考: {context}"
+            
+            # 使用流式生成响应
+            for chunk in self.llm_client.stream_generate(user_prompt, system_prompt):
+                yield chunk
+        except Exception as e:
+            self.logger.error(f"流式处理查询失败: {e}")
+            yield f"生成响应失败: {str(e)}"

@@ -66,8 +66,8 @@ class LLMClient:
             self.logger.error(f"LLM生成失败: {e}")
             return f"生成响应失败: {str(e)}"
     
-    async def generate_async(self, prompt: str, system_prompt: str = "") -> str:
-        """异步生成文本响应"""
+    def stream_generate(self, prompt: str, system_prompt: str = ""):
+        """流式生成文本响应"""
         try:
             messages = []
             
@@ -78,14 +78,16 @@ class LLMClient:
             # 添加用户提示
             messages.append(HumanMessage(content=prompt))
             
-            # 异步调用LLM生成响应
-            response = await self.llm.ainvoke(messages)
-            
-            return response.content
+            # 流式调用LLM生成响应
+            for chunk in self.llm.stream(messages):
+                if chunk.content:
+                    yield chunk.content
             
         except Exception as e:
-            self.logger.error(f"异步LLM生成失败: {e}")
-            return f"生成响应失败: {str(e)}"
+            self.logger.error(f"LLM流式生成失败: {e}")
+            yield f"生成响应失败: {str(e)}"
+    
+
     
     async def ask_with_tools(self, query: str, context: str, tools: List[BaseTool]) -> Dict[str, Any]:
         """使用工具调用回答问题"""
@@ -136,34 +138,4 @@ class LLMClient:
             return {
                 "type": "error",
                 "content": f"处理请求失败: {str(e)}"
-            }
-    
-    def chat(self, messages: List[Dict[str, str]]) -> Dict[str, str]:
-        """进行多轮对话"""
-        try:
-            # 转换消息格式
-            langchain_messages = []
-            for msg in messages:
-                if msg["role"] == "system":
-                    langchain_messages.append(SystemMessage(content=msg["content"]))
-                elif msg["role"] == "user":
-                    langchain_messages.append(HumanMessage(content=msg["content"]))
-                elif msg["role"] == "assistant":
-                    langchain_messages.append(AIMessage(content=msg["content"]))
-                else:
-                    langchain_messages.append(ChatMessage(role=msg["role"], content=msg["content"]))
-            
-            # 调用LLM生成响应
-            response = self.llm.invoke(langchain_messages)
-            
-            return {
-                "role": "assistant",
-                "content": response.content
-            }
-            
-        except Exception as e:
-            self.logger.error(f"对话失败: {e}")
-            return {
-                "role": "assistant",
-                "content": f"对话失败: {str(e)}"
             }
