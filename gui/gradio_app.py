@@ -339,7 +339,7 @@ class PythonEducationSystemGradio:
                             language="python",
                             label="Python代码编辑器",
                             value="# 在这里输入Python代码\nprint('Hello, Python!')\n",
-                            lines=12,  # 减小行数以适应屏幕
+                            lines=20,  # 减小行数以适应屏幕
                             scale=1,
                             interactive=True
                         )
@@ -351,7 +351,7 @@ class PythonEducationSystemGradio:
                     
                     code_output = gr.Textbox(
                         label="执行结果",
-                        lines=10,
+                        lines=6,
                         interactive=False
                     )
             
@@ -404,9 +404,9 @@ class PythonEducationSystemGradio:
                     flex-direction: column;
                 }
                 
-                /* 确保整个页面没有滚动条 */
+                /* 整个页面设置滚动条 */
                 body {
-                    overflow: hidden;
+                    overflow: auto;
                 }
                 
                 /* 确保Gradio容器适应屏幕 */
@@ -491,20 +491,45 @@ class PythonEducationSystemGradio:
                     background: white !important;
                 }
                 
-                /* 代码输入框添加滚动条 */
+                /* 固定代码输入框大小并添加滚动条 */
                 .gradio-container .code-editor-container {
                     max-height: 320px !important;
-                    overflow: auto !important;
+                    height: 320px !important;
+                    overflow-y: auto !important;
+                    overflow-x: auto !important;
                     border-radius: 8px !important;
+                    resize: none !important;
                 }
                 
                 /* 确保代码编辑器内容可滚动 */
                 .gradio-container pre {
                     overflow: auto !important;
+                    white-space: pre-wrap !important;
+                    word-wrap: break-word !important;
+                }
+                
+                /* 美化滚动条样式 */
+                .code-editor-container::-webkit-scrollbar {
+                    width: 8px;
+                    height: 8px;
+                }
+                
+                .code-editor-container::-webkit-scrollbar-track {
+                    background: #f1f1f1;
+                    border-radius: 4px;
+                }
+                
+                .code-editor-container::-webkit-scrollbar-thumb {
+                    background: #ccc;
+                    border-radius: 4px;
+                }
+                
+                .code-editor-container::-webkit-scrollbar-thumb:hover {
+                    background: #999;
                 }
                 
                 /* 调整对话框字体大小 */
-                #custom-chatbot .message { font-size: 14px; }
+                #custom-chatbot .message { font-size: 12px; }
                 
                 /* 为对话框添加滚动条 */
                 #custom-chatbot { overflow-y: auto; }
