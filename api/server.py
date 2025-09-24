@@ -4,6 +4,8 @@
 import os
 import sys
 import json
+import asyncio
+import uuid
 from typing import Dict, List, Any, Optional, Generator
 import uvicorn
 from fastapi import FastAPI, HTTPException, Depends, Request
@@ -109,21 +111,66 @@ def create_app(education_system: PythonEducationSystem, config: SystemConfig) ->
             raise HTTPException(status_code=500, detail=f"查询处理失败: {str(e)}")
 
     @app.post("/stream_query")
-    def stream_query(request: QueryRequest):
+    async def stream_query(request: QueryRequest):
         """处理用户流式查询请求"""
-        def event_generator():
+        # 生成唯一请求ID并转换为字符串
+        request_id = str(uuid.uuid4())
+        
+        async def event_generator():
             try:
-                # 获取流式响应
-                for chunk in _education_system.stream_query(request.query):
-                    # 发送文本块
-                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+                # 使用handle_query函数获取流式响应
+                # 在异步环境中正确处理同步生成器
+                chunk_queue = asyncio.Queue()
+                
+                # 在单独的线程中运行同步生成器
+                def sync_generator():
+                    try:
+                        generator = _education_system.handle_query(request.query, stream=True, request_id=request_id)
+                        for chunk in generator:
+                            # 将同步生成器的结果放入队列
+                            chunk_queue.put_nowait(chunk)
+                    except Exception as e:
+                        chunk_queue.put_nowait(f"处理请求时出错: {str(e)}")
+                    finally:
+                        chunk_queue.put_nowait(None)
+                
+                # 启动同步生成器线程
+                loop = asyncio.get_event_loop()
+                # 提交到执行器但不阻塞等待
+                executor_future = loop.run_in_executor(None, sync_generator)
+                
+                # 从队列中读取结果并发送
+                while True:
+                    # 使用asyncio.wait_for添加超时，防止永久阻塞
+                    try:
+                        # 这个await会让出控制权，允许其他协程运行
+                        chunk = await asyncio.wait_for(chunk_queue.get(), timeout=None)
+                        if chunk is None:  # 生成器完成
+                            break
+                        # 确保数据格式正确
+                        if isinstance(chunk, dict):
+                            yield f"data: {json.dumps(chunk)}\n\n"
+                        else:
+                            # 确保chunk是字符串类型
+                            chunk_str = str(chunk) if chunk is not None else ''
+                            yield f"data: {json.dumps({'content': chunk_str})}\n\n"
+                    except asyncio.TimeoutError:
+                        # 超时处理
+                        continue
                 # 发送结束信号
                 yield "data: {\"done\": true}\n\n"
             except Exception as e:
                 logger.error(f"流式查询处理失败: {e}")
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
         
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive"
+        }
+    )
     
     # 中止流式输出端点
     @app.post("/abort_stream")
@@ -162,7 +209,7 @@ def start_server(education_system: PythonEducationSystem, config: SystemConfig):
     app = create_app(education_system, config)
     
     logger.info(f"API服务器启动在端口 {config.api_port}...")
-    logger.info("请访问 http://localhost:{config.api_port} 查看API文档")
+    logger.info(f"请访问 http://localhost:{config.api_port} 查看API文档")
     
     # 启动服务器
     uvicorn.run(

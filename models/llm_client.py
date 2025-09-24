@@ -2,10 +2,9 @@
 """大语言模型客户端模块"""
 
 import os
-import asyncio
 import threading
 from typing import Dict, List, Any, Optional, Tuple
-from langchain.chat_models import ChatOpenAI
+from langchain_community.chat_models import ChatOpenAI
 from langchain.schema import (
     SystemMessage,
     HumanMessage,
@@ -52,8 +51,8 @@ class LLMClient:
         self.request_id = None
         self.request_lock = threading.Lock()
     
-    def generate(self, prompt: str, system_prompt: str = "") -> str:
-        """生成文本响应"""
+    def generate(self, prompt: str, system_prompt: str = "", stream: bool = True, request_id: str = None):
+        """生成文本响应，支持流式输出"""
         try:
             messages = []
             
@@ -64,14 +63,37 @@ class LLMClient:
             # 添加用户提示
             messages.append(HumanMessage(content=prompt))
             
-            # 调用LLM生成响应
-            response = self.llm.invoke(messages)
+            # 非流式输出
+            if not stream:
+                response = self.llm.invoke(messages)
+                return response.content
             
-            return response.content
+            # 流式输出
+            # 设置请求ID和重置中止标志
+            if request_id:
+                self.set_request_id(request_id)
+                self.set_abort_flag(False, request_id)
+                
+            for chunk in self.llm.stream(messages):
+                # 检查中止标志
+                if request_id and self.get_abort_flag():
+                    self.logger.info("流式生成被中止")
+                    yield "[系统提示] 输出已中止"
+                    break
+                
+                if chunk.content:
+                    yield chunk.content
             
         except Exception as e:
             self.logger.error(f"LLM生成失败: {e}")
-            return f"生成响应失败: {str(e)}"
+            if stream:
+                yield f"生成响应失败: {str(e)}"
+            else:
+                return f"生成响应失败: {str(e)}"
+        finally:
+            # 重置中止标志
+            if stream and request_id:
+                self.set_abort_flag(False, request_id)
     
     def set_abort_flag(self, flag: bool, request_id: str = None):
         """设置中止标志"""
@@ -92,43 +114,7 @@ class LLMClient:
         with self.request_lock:
             self.request_id = request_id
     
-    def stream_generate(self, prompt: str, system_prompt: str = "", request_id: str = None):
-        """流式生成文本响应"""
-        try:
-            # 设置请求ID和重置中止标志
-            self.set_request_id(request_id)
-            self.set_abort_flag(False, request_id)
-            
-            messages = []
-            
-            # 添加系统提示
-            if system_prompt:
-                messages.append(SystemMessage(content=system_prompt))
-            
-            # 添加用户提示
-            messages.append(HumanMessage(content=prompt))
-            
-            # 流式调用LLM生成响应
-            for chunk in self.llm.stream(messages):
-                # 检查中止标志
-                if self.get_abort_flag():
-                    self.logger.info("流式生成被中止")
-                    yield "[系统提示] 输出已中止"
-                    break
-                
-                if chunk.content:
-                    yield chunk.content
-            
-        except Exception as e:
-            self.logger.error(f"LLM流式生成失败: {e}")
-            yield f"生成响应失败: {str(e)}"
-        finally:
-            # 重置中止标志
-            self.set_abort_flag(False, request_id)
-    
-
-    
-    async def ask_with_tools(self, query: str, context: str, tools: List[BaseTool]) -> Dict[str, Any]:
+    def ask_with_tools(self, query: str, context: str, tools: List[BaseTool], stream: bool = True, request_id: str = None):
         """使用工具调用回答问题"""
         try:
             # 构造系统提示
@@ -162,7 +148,7 @@ class LLMClient:
             )
             
             # 运行代理
-            result = await agent.ainvoke({
+            result = agent.invoke({
                 "input": query,
                 "chat_history": messages
             })
@@ -178,3 +164,7 @@ class LLMClient:
                 "type": "error",
                 "content": f"处理请求失败: {str(e)}"
             }
+        finally:
+            # 重置中止标志
+            if stream and request_id:
+                self.set_abort_flag(False, request_id)

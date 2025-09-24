@@ -4,16 +4,15 @@
 import os
 import sys
 import json
-import asyncio
 from typing import Dict, List, Tuple, Any, Optional
 from pathlib import Path
 
-from langchain.vectorstores import Chroma
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_community.vectorstores import Chroma
+from langchain_community.embeddings import OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.docstore.document import Document
 from langchain.chains import RetrievalQA
-from langchain.chat_models import ChatOpenAI
+from langchain_community.chat_models import ChatOpenAI
 from langchain.tools import BaseTool, StructuredTool, tool
 
 from utils.config import SystemConfig
@@ -135,7 +134,7 @@ class PythonEducationSystem:
                 "error": str(e)
             }
     
-    def generate_quiz(self, topic: str, difficulty: str = "medium", num_questions: int = 5) -> Dict[str, Any]:
+    def generate_quiz(self, topic: str, difficulty: str = "medium", num_questions: int = 5):
         """根据主题生成编程测验"""
         try:
             # 使用RAG检索相关知识
@@ -167,7 +166,7 @@ class PythonEducationSystem:
                 "error": str(e)
             }
     
-    def check_answer(self, question: str, user_answer: str) -> Dict[str, Any]:
+    def check_answer(self, question: str, user_answer: str, request_id: str = None):
         """检查用户的答案是否正确"""
         try:
             prompt = f"""
@@ -180,16 +179,9 @@ class PythonEducationSystem:
             - is_correct: 布尔值，表示答案是否正确
             - feedback: 对答案的反馈和解释
             """
-            
-            response = self.llm_client.generate(prompt)
-            
-            # 解析结果
-            # 这里简化处理，实际应用中可能需要更复杂的解析
-            return {
-                "success": True,
-                "is_correct": "正确" in response,
-                "response": response
-            }
+
+            return self.llm_client.generate(prompt, request_id=request_id)
+
         except Exception as e:
             self.logger.error(f"检查答案失败: {e}")
             return {
@@ -197,7 +189,7 @@ class PythonEducationSystem:
                 "error": str(e)
             }
     
-    def explain_concept(self, concept: str, level: str = "beginner") -> Dict[str, Any]:
+    def explain_concept(self, concept: str, level: str = "beginner", request_id: str = None):
         """解释编程概念"""
         try:
             # 使用RAG检索相关知识
@@ -212,87 +204,159 @@ class PythonEducationSystem:
             {context}
             """
             
-            response = self.llm_client.generate(prompt)
-            
-            return {
-                "success": True,
-                "concept": concept,
-                "level": level,
-                "response": response
-            }
+            # 调用LLM并确保获取生成器
+            return self.llm_client.generate(prompt, request_id=request_id)
+
         except Exception as e:
             self.logger.error(f"解释概念失败: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            # 返回错误信息作为生成器
+            def error_generator():
+                yield {
+                    "success": False,
+                    "error": str(e)
+                }
+            return error_generator()
     
-    async def handle_query(self, query: str) -> Dict[str, Any]:
-        """处理用户查询"""
+    def handle_query(self, query: str, stream: bool = True, request_id: str = None):
+        """处理用户查询，支持流式输出"""
         try:
             # 使用RAG检索相关知识
             context = self.rag_manager.retrieve(query, k=3)
             
             # 调用LLM处理查询，可能会使用工具
-            response = await self.llm_client.ask_with_tools(query, context, self.tools)
-            # 每个工具的result需要统一，不然会有奇怪的返回
-
-            # 提取action的值,从而判断是否要调用工具
-            content_dict = response['content']
-            content_json = json.loads(content_dict)
-            action = content_json['action']
-            action_input = content_json['action_input']
-
-            # 根据是否调用工具调用来继续执行工具
-            try:
-                if action != "Final Answer":
-                    # 判断调用什么工具
-                    target_tool = getattr(self, action, None)
+            response = self.llm_client.ask_with_tools(query, context, self.tools)
+            
+            # 流式输出模式
+            if stream:
+                # 流式处理逻辑
+                try:
+                    # 确保json模块可用
+                    import json
                     
-                    if target_tool is None:
-                        # 如果找不到对应的工具，返回错误信息
-                        final_response = f"错误: 找不到名为'{action}'的工具函数"
-                        self.logger.error(f"找不到工具函数: {action}")
-                    else:
-                        # 开始调用工具
-                        answer_dict = target_tool(**action_input)
-                        # 安全地获取response字段
-                        final_response = answer_dict.get('response', "工具返回结果格式不正确")
-                else:
-                    final_response = action_input
-            except Exception as e:
-                # 捕获所有可能的异常
-                error_message = f"工具调用过程中发生错误: {str(e)}"
-                final_response = error_message
-                self.logger.error(f"工具调用异常: {str(e)}", exc_info=True)
+                    # 提取action的值
+                    content_dict = response['content']
+                    content_json = json.loads(content_dict)
+                    action = content_json.get('action', '')
+                    action_input = content_json.get('action_input', '')
 
-            return {
-                "success": True,
-                "response": final_response # str
-            }
+                    if action != "Final Answer":
+                        # 判断调用什么工具
+                        target_tool = getattr(self, action, None)
+                        
+                        if target_tool is None:
+                            # 如果找不到对应的工具，yield错误信息
+                            yield f"错误: 找不到名为'{action}'的工具函数"
+                            self.logger.error(f"找不到工具函数: {action}")
+                        else:
+                            # 调用工具并yield结果
+                            try:
+                                # 确保传递request_id参数
+                                action_input['request_id'] = request_id
+                                answer = target_tool(**action_input)
+                                # 关键修改：判断answer是否为生成器
+                                if hasattr(answer, '__iter__') and not isinstance(answer, (str, bytes)):
+                                    # 迭代生成器，逐段输出
+                                    for chunk in answer:
+                                        # 确保chunk是可序列化的
+                                        if isinstance(chunk, dict):
+                                            # 如果是字典，转换为JSON字符串
+                                            yield json.dumps(chunk)
+                                        else:
+                                            # 其他类型直接转换为字符串
+                                            yield str(chunk)
+                                else:
+                                    # 非生成器结果（如错误信息）直接输出
+                                    if isinstance(answer, dict):
+                                        # 如果是字典，转换为JSON字符串
+                                        yield json.dumps(answer)
+                                    else:
+                                        # 其他类型直接转换为字符串
+                                        yield str(answer)
+
+                            except Exception as tool_error:
+                                error_msg = f"工具执行失败: {str(tool_error)}"
+                                for char in error_msg:
+                                    yield char
+                                self.logger.error(f"工具执行异常: {str(tool_error)}", exc_info=True)
+                    else:
+                        # 直接使用LLM生成的回答，使用流式模式
+                        for chunk in self.llm_client.generate(query, stream=True, request_id=request_id):
+                            yield chunk
+                except json.JSONDecodeError:
+                    # 如果不是JSON格式，直接yield原始内容
+                    for char in content_dict:
+                        yield char
+                except Exception as e:
+                    # 捕获所有可能的异常
+                    error_msg = f"处理响应过程中发生错误: {str(e)}"
+                    for char in error_msg:
+                        yield char
+                    self.logger.error(f"处理响应异常: {str(e)}", exc_info=True)
+            else:
+                # 非流式输出模式
+                try:
+                    # 确保json模块可用
+                    import json
+                    
+                    # 提取action的值
+                    content_dict = response['content']
+                    content_json = json.loads(content_dict)
+                    action = content_json.get('action', '')
+                    action_input = content_json.get('action_input', '')
+                    final_response = ""
+
+                    if action != "Final Answer":
+                        # 判断调用什么工具
+                        target_tool = getattr(self, action, None)
+                        
+                        if target_tool is None:
+                            # 如果找不到对应的工具，返回错误信息
+                            final_response = f"错误: 找不到名为'{action}'的工具函数"
+                            self.logger.error(f"找不到工具函数: {action}")
+                        else:
+                            # 调用工具并获取结果
+                            try:
+                                answer = target_tool(**action_input)
+                                # 根据answer的类型处理结果
+                                if isinstance(answer, dict):
+                                    if answer.get('success'):
+                                        final_response = answer.get('response', str(answer))
+                                    else:
+                                        final_response = answer.get('error', '工具执行失败')
+                                elif hasattr(answer, '__iter__') and not isinstance(answer, (str, bytes)):
+                                    # 如果是可迭代对象但不是字符串
+                                    final_response = ''.join(str(item) for item in answer)
+                                else:
+                                    final_response = str(answer)
+                            except Exception as tool_error:
+                                final_response = f"工具执行失败: {str(tool_error)}"
+                                self.logger.error(f"工具执行异常: {str(tool_error)}", exc_info=True)
+                    else:
+                        # 直接使用LLM生成的回答
+                        final_response = self.llm_client.generate(query)
+                except json.JSONDecodeError:
+                    # 如果不是JSON格式，直接作为响应
+                    final_response = content_dict
+                except Exception as e:
+                    # 捕获所有可能的异常
+                    error_msg = f"处理响应过程中发生错误: {str(e)}"
+                    final_response = error_msg
+                    self.logger.error(f"处理响应异常: {str(e)}", exc_info=True)
+
+                return {
+                    "success": True,
+                    "response": final_response
+                }
+            
         except Exception as e:
             self.logger.error(f"处理查询失败: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
-            
-    def stream_query(self, query: str, request_id: str = None):
-        """流式处理用户查询"""
-        try:
-            # 使用RAG检索相关知识
-            context = self.rag_manager.retrieve(query, k=3)
-            
-            # 构造系统提示和用户提示
-            system_prompt = "你是一个Python编程教育助手。请根据用户的问题和提供的上下文，使用简单易懂的语言回答问题。"
-            user_prompt = f"问题: {query}\n\n相关知识参考: {context}"
-            
-            # 使用流式生成响应
-            for chunk in self.llm_client.stream_generate(user_prompt, system_prompt, request_id):
-                yield chunk
-        except Exception as e:
-            self.logger.error(f"流式处理查询失败: {e}")
-            yield f"生成响应失败: {str(e)}"
+            if stream:
+                yield f"生成响应失败: {str(e)}"
+            else:
+                return {
+                    "success": False,
+                    "error": str(e)
+                }
             
     def abort_stream(self, request_id: str = None):
         """中止流式输出"""

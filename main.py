@@ -27,8 +27,26 @@ def main():
         # 启动API服务器
         start_server(education_system, config)
         
+    except FileNotFoundError as e:
+        print(f"配置文件未找到: {e}")
+        print("请确保配置文件存在且路径正确")
+        sys.exit(1)
+    except ValueError as e:
+        print(f"配置参数错误: {e}")
+        print("请检查配置文件中的参数是否正确")
+        sys.exit(1)
+    except RuntimeError as e:
+        print(f"运行时错误: {e}")
+        print("可能是LLM客户端或教育系统初始化失败")
+        print("请检查API密钥、网络连接或配置参数")
+        sys.exit(1)
+    except ImportError as e:
+        print(f"缺少依赖库: {e}")
+        print("请安装所需的依赖库")
+        sys.exit(1)
     except Exception as e:
         print(f"系统启动失败: {e}")
+        print("请查看详细错误信息以获取更多帮助")
         sys.exit(1)
 
 
