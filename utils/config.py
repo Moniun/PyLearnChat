@@ -34,7 +34,8 @@ class SystemConfig(BaseModel):
     data_dir: str = "./data"
     models_dir: str = "./models"
     allowed_functions: List[str] = Field(default_factory=lambda: [
-        "execute_code", "generate_quiz", "check_answer", "explain_concept", "search_knowledge"
+        "execute_code", "generate_quiz", "check_answer", 
+        "explain_concept", "search_knowledge", "other_questions"
     ])
 
 

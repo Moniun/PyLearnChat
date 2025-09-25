@@ -19,3 +19,4 @@ allowed_functions:
   - "check_answer"
   - "explain_concept"
   - "search_knowledge"
+  - "other_questions"

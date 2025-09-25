@@ -87,7 +87,6 @@ class PythonEducationSystem:
                 description="解释编程概念"
             ))
         
-        # 新工具：搜索知识库
         if "search_knowledge" in self.config.allowed_functions:
             tools.append(StructuredTool.from_function(
                 func=self.search_knowledge,
@@ -95,10 +94,39 @@ class PythonEducationSystem:
                 description="在知识库中搜索特定信息"
             ))
         
+        if "other_questions" in self.config.allowed_functions:
+            tools.append(StructuredTool.from_function(
+                func=self.other_questions,
+                name="other_questions",
+                description="当其他工具都不适合时，调用此工具。遇到与Python无关的问题时，也请调用此工具"
+            ))
+        
         # 这里可以继续添加更多工具...
         
         return tools
-    
+
+    def other_questions(self, query: str, request_id: str = None):
+        """回答其他工具不适合的问题"""
+        try:
+            context = self.rag_manager.retrieve(query, k=3)
+            
+            prompt = f"""
+            回复用户的问题：{query}
+            
+            相关知识参考：
+            {context}
+            """
+            return self.llm_client.generate(prompt, request_id=request_id)
+
+        except Exception as e:
+            self.logger.error(f"回答其他问题失败: {e}")
+            def error_generator():
+                yield {
+                    "success": False,
+                    "error": str(f"回答其他问题失败: {e}")
+                }
+            return error_generator()
+
     def search_knowledge(self, query: str, k: int = 5) -> Dict[str, Any]:
         """在知识库中搜索特定信息"""
         try:
@@ -134,7 +162,7 @@ class PythonEducationSystem:
                 "error": str(e)
             }
     
-    def generate_quiz(self, topic: str, difficulty: str = "medium", num_questions: int = 5):
+    def generate_quiz(self, topic: str, difficulty: str = "medium", num_questions: int = 5, request_id: str = None):
         """根据主题生成编程测验"""
         try:
             # 使用RAG检索相关知识
@@ -143,28 +171,22 @@ class PythonEducationSystem:
             # 调用LLM生成测验
             prompt = f"""
             为学习Python编程的学生生成{num_questions}道关于{topic}的测验题，难度为{difficulty}。
-            请提供问题、选项（如果是选择题）、正确答案和解释。如果用户没有要求，请不要直接给出解释和答案。
+            请提供问题、选项（如果是选择题）。如果用户没有要求，请不要直接给出解释和答案。
             
             相关知识参考：
             {context}
             """
+
+            return self.llm_client.generate(prompt, request_id=request_id)
             
-            response = self.llm_client.generate(prompt)
-            
-            # 解析测验结果
-            # 这里简化处理，实际应用中可能需要更复杂的解析
-            return {
-                "success": True,
-                "topic": topic,
-                "difficulty": difficulty,
-                "response": response
-            }
         except Exception as e:
             self.logger.error(f"生成测验失败: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            def error_generator():
+                yield {
+                    "success": False,
+                    "error": str(f"生成测验失败: {e}")
+                }
+            return error_generator()
     
     def check_answer(self, question: str, user_answer: str, request_id: str = None):
         """检查用户的答案是否正确"""
@@ -175,19 +197,19 @@ class PythonEducationSystem:
             问题: {question}
             用户答案: {user_answer}
             
-            请返回：
-            - is_correct: 布尔值，表示答案是否正确
-            - feedback: 对答案的反馈和解释
+            请先回答用户答案是否正确，再提供答案的反馈和解释。
             """
 
             return self.llm_client.generate(prompt, request_id=request_id)
 
         except Exception as e:
             self.logger.error(f"检查答案失败: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            def error_generator():
+                yield {
+                    "success": False,
+                    "error": str(f"检查答案失败: {e}")
+                }
+            return error_generator()
     
     def explain_concept(self, concept: str, level: str = "beginner", request_id: str = None):
         """解释编程概念"""
@@ -204,16 +226,15 @@ class PythonEducationSystem:
             {context}
             """
             
-            # 调用LLM并确保获取生成器
+            # 获取生成器
             return self.llm_client.generate(prompt, request_id=request_id)
 
         except Exception as e:
             self.logger.error(f"解释概念失败: {e}")
-            # 返回错误信息作为生成器
             def error_generator():
                 yield {
                     "success": False,
-                    "error": str(e)
+                    "error": str(f"解释概念失败: {e}")
                 }
             return error_generator()
     
