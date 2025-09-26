@@ -238,14 +238,14 @@ class PythonEducationSystem:
                 }
             return error_generator()
     
-    def handle_query(self, query: str, stream: bool = True, request_id: str = None):
-        """处理用户查询，支持流式输出"""
+    def handle_query(self, query: str, stream: bool = True, request_id: str = None, session_id: Optional[str] = None):
+        """处理用户查询，支持流式输出和历史消息参考"""
         try:
             # 使用RAG检索相关知识
             context = self.rag_manager.retrieve(query, k=3)
             
             # 调用LLM处理查询，可能会使用工具
-            response = self.llm_client.ask_with_tools(query, context, self.tools)
+            response = self.llm_client.ask_with_tools(query, context, self.tools, stream, request_id, session_id)
             
             # 流式输出模式
             if stream:

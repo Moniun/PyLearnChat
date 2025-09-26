@@ -3,6 +3,7 @@
 
 import os
 import threading
+import atexit
 from typing import Dict, List, Any, Optional, Tuple
 from langchain_community.chat_models import ChatOpenAI
 from langchain.schema import (
@@ -50,22 +51,39 @@ class LLMClient:
         self.abort_lock = threading.Lock()
         self.request_id = None
         self.request_lock = threading.Lock()
+        
+        # 历史消息存储 - 简单的内存存储
+        self.chat_history = []
+        self.history_lock = threading.Lock()
+        
+        # 注册程序退出时的清理函数
+        atexit.register(self.clear_chat_history)
     
-    def generate(self, prompt: str, system_prompt: str = "", stream: bool = True, request_id: str = None):
-        """生成文本响应，支持流式输出"""
+    def generate(self, prompt: str, stream: bool = True, request_id: str = None, session_id: Optional[str] = None):
+        """生成文本响应，支持流式输出和历史消息参考"""
         try:
-            messages = []
+            system_prompt = f"""
+            你是一个Python编程教育助手。请根据用户的问题和提供的上下文，回答问题。
+            """
+
+            # 构造消息列表，包含系统消息和历史消息
+            messages = [SystemMessage(content=system_prompt)]
             
-            # 添加系统提示
-            if system_prompt:
-                messages.append(SystemMessage(content=system_prompt))
+            # 获取并添加历史消息
+            with self.history_lock:
+                messages.extend(self.chat_history.copy())
             
-            # 添加用户提示
+            # 添加当前用户消息
             messages.append(HumanMessage(content=prompt))
             
             # 非流式输出
             if not stream:
                 response = self.llm.invoke(messages)
+                
+                # 保存AI回答到历史消息
+                with self.history_lock:
+                    self.chat_history.append(AIMessage(content=response.content))
+                
                 return response.content
             
             # 流式输出
@@ -74,15 +92,29 @@ class LLMClient:
                 self.set_request_id(request_id)
                 self.set_abort_flag(False, request_id)
                 
-            for chunk in self.llm.stream(messages):
-                # 检查中止标志
-                if request_id and self.get_abort_flag():
-                    self.logger.info("流式生成被中止")
-                    yield "[系统提示] 输出已中止"
-                    break
-                
-                if chunk.content:
-                    yield chunk.content
+            # 流式生成响应
+            full_response = ""
+            is_completed = False
+            
+            try:
+                for chunk in self.llm.stream(messages):
+                    # 检查中止标志
+                    if request_id and self.get_abort_flag():
+                        self.logger.info("流式生成被中止")
+                        yield "[系统提示] 输出已中止"
+                        break
+                    
+                    if chunk.content:
+                        full_response += chunk.content
+                        yield chunk.content
+                else:
+                    # 循环正常完成（没有被break）
+                    is_completed = True
+            finally:
+                # 只有当响应完整生成（没有中途停止）时，才保存到历史消息
+                if is_completed and full_response:
+                    with self.history_lock:
+                        self.chat_history.append(AIMessage(content=full_response))
             
         except Exception as e:
             self.logger.error(f"LLM生成失败: {e}")
@@ -114,25 +146,44 @@ class LLMClient:
         with self.request_lock:
             self.request_id = request_id
     
-    def ask_with_tools(self, query: str, context: str, tools: List[BaseTool], stream: bool = True, request_id: str = None):
-        """使用工具调用回答问题"""
+    def clear_chat_history(self):
+        """清空所有历史消息"""
+        with self.history_lock:
+            self.chat_history.clear()
+            self.logger.info("历史消息已清空")
+    
+    def __del__(self):
+        """对象被垃圾回收时自动清理历史消息"""
+        try:
+            self.clear_chat_history()
+        except Exception as e:
+            # 避免析构函数中的异常影响程序退出
+            pass
+    
+    def ask_with_tools(self, query: str, context: str, tools: List[BaseTool], stream: bool = True, request_id: str = None, session_id: Optional[str] = None):
+        """使用工具调用回答问题，支持历史消息参考"""
         try:
             # 构造系统提示
             system_prompt = f"""
-            你是一个Python编程教育助手。请根据用户的问题和提供的上下文，使用适当的工具来回答问题。
+            你是一个Python编程教育助手。请根据用户的问题、参考资料和提供的上下文，使用适当的工具来回答问题。
+            每次回答都使用工具，如果遇到和Python无关的问题或你不知道使用什么工具，则使用“other_questions”工具。
             
-            上下文信息：
+            参考信息：
             {context}
             
             你可以使用以下工具：
             {[tool.name for tool in tools]}
             """
             
-            # 构造消息
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=query)
-            ]
+            # 构造消息列表，包含系统消息和历史消息
+            messages = [SystemMessage(content=system_prompt)]
+            
+            # 获取并添加历史消息
+            with self.history_lock:
+                messages.extend(self.chat_history.copy())
+            
+            # 添加当前用户消息
+            messages.append(HumanMessage(content=query))
             
             # 初始化工具调用链
             from langchain.chains import ConversationChain
@@ -148,10 +199,16 @@ class LLMClient:
             )
             
             # 运行代理
+            # 传入完整的会话历史作为chat_history
+            chat_history = messages if len(messages) > 1 else []
             result = agent.invoke({
                 "input": query,
-                "chat_history": messages
+                "chat_history": chat_history
             })
+
+            # 保存用户问题到历史消息
+            with self.history_lock:
+                self.chat_history.append(HumanMessage(content=query))
 
             return {
                 "type": "response",
