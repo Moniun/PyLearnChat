@@ -46,6 +46,9 @@ def find_and_kill_processes():
     """查找并杀死相关的Python进程"""
     print("正在查找并杀死相关的Python进程...")
     
+    # 获取当前进程ID，避免杀死自己
+    current_pid = str(os.getpid())
+    
     # 在Windows上查找并杀死包含main.py或uvicorn的进程
     try:
         # 获取所有进程
@@ -65,6 +68,10 @@ def find_and_kill_processes():
                     # 去除引号
                     process_name = parts[0].strip('"')
                     pid = parts[1].strip('"')
+                    
+                    # 跳过当前进程
+                    if pid == current_pid:
+                        continue
                     
                     # 检查是否是python进程并且命令行包含关键字
                     if process_name.lower() == "python.exe" or process_name.lower() == "pythonw.exe":
@@ -88,7 +95,7 @@ def find_and_kill_processes():
             for pid in pids_to_kill:
                 try:
                     subprocess.run(["taskkill", "/F", "/PID", pid], check=True)
-                    print(f"已杀死进程: PID={pid}")
+                    print(f"成功：已终止 PID 为 {pid} 的进程。")
                 except Exception as e:
                     print(f"杀死进程失败 PID={pid}: {e}")
         else:
@@ -97,38 +104,38 @@ def find_and_kill_processes():
         print(f"查找进程时出错: {e}")
 
 
-def fix_education_system():  # 注意这个函数名是为了符合requirements中的命名规范
-    """修复education_system.py中的逻辑错误"""
-    file_path = os.path.join(Path(__file__).parent, "src", "education_system.py")
+# def fix_education_system():  # 注意这个函数名是为了符合requirements中的命名规范
+#     """修复education_system.py中的逻辑错误"""
+#     file_path = os.path.join(Path(__file__).parent, "src", "education_system.py")
     
-    print(f"正在修复文件: {file_path}")
+#     print(f"正在修复文件: {file_path}")
     
-    try:
-        # 读取文件内容
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+#     try:
+#         # 读取文件内容
+#         with open(file_path, 'r', encoding='utf-8') as f:
+#             content = f.read()
         
-        # 查找并替换错误的代码
-        old_code = "        except Exception as e:\n            self.logger.error(f\"处理查询失败: {e}\")\n            return {\n                \"success\": False,\n                \"response\": response\n            }"
-        new_code = "        except Exception as e:\n            self.logger.error(f\"处理查询失败: {e}\")\n            return {\n                \"success\": False,\n                \"error\": str(e)\n            }"
+#         # 查找并替换错误的代码
+#         old_code = "        except Exception as e:\n            self.logger.error(f\"处理查询失败: {e}\")\n            return {\n                \"success\": False,\n                \"response\": response\n            }"
+#         new_code = "        except Exception as e:\n            self.logger.error(f\"处理查询失败: {e}\")\n            return {\n                \"success\": False,\n                \"error\": str(e)\n            }"
         
-        if old_code in content:
-            # 执行替换
-            updated_content = content.replace(old_code, new_code)
+#         if old_code in content:
+#             # 执行替换
+#             updated_content = content.replace(old_code, new_code)
             
-            # 写回文件
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(updated_content)
+#             # 写回文件
+#             with open(file_path, 'w', encoding='utf-8') as f:
+#                 f.write(updated_content)
             
-            print("成功修复education_system.py中的逻辑错误")
-        else:
-            print("文件中未找到需要修复的代码模式，可能已经修复过了")
-    except Exception as e:
-        print(f"修复文件时出错: {e}")
+#             print("成功修复education_system.py中的逻辑错误")
+#         else:
+#             print("文件中未找到需要修复的代码模式，可能已经修复过了")
+#     except Exception as e:
+#         print(f"修复文件时出错: {e}")
 
 
-def main():
-    """主函数"""
+def clear_main():
+    """清理所有进程，用于解决代码修改不生效问题"""
     print("===== 开始解决代码修改不生效问题 =====")
     
     # 1. 杀死相关进程
@@ -137,8 +144,8 @@ def main():
     # 2. 清除缓存
     clear_pycache()
     
-    # 3. 修复文件
-    fix_education_system()
+    # # 3. 修复文件
+    # fix_education_system()
     
     print("\n===== 操作完成 =====")
     print("\n现在您可以重新启动系统了。建议的启动步骤：")
@@ -156,4 +163,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    clear_main()

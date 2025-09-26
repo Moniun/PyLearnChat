@@ -59,82 +59,37 @@ class LLMClient:
         # 注册程序退出时的清理函数
         atexit.register(self.clear_chat_history)
     
-    def generate(self, prompt: str, stream: bool = True, request_id: str = None, session_id: Optional[str] = None):
-        """生成文本响应，支持流式输出和历史消息参考"""
-        try:
-            system_prompt = f"""
-            你是一个Python编程教育助手。请根据用户的问题和提供的上下文，回答问题。
-            """
-
-            # 构造消息列表，包含系统消息和历史消息
-            messages = [SystemMessage(content=system_prompt)]
-            
-            # 获取并添加历史消息
-            with self.history_lock:
-                messages.extend(self.chat_history.copy())
-            
-            # 添加当前用户消息
-            messages.append(HumanMessage(content=prompt))
-            
-            # 非流式输出
-            if not stream:
-                response = self.llm.invoke(messages)
-                
-                # 保存AI回答到历史消息
-                with self.history_lock:
-                    self.chat_history.append(AIMessage(content=response.content))
-                
-                return response.content
-            
-            # 流式输出
-            # 设置请求ID和重置中止标志
-            if request_id:
-                self.set_request_id(request_id)
-                self.set_abort_flag(False, request_id)
-                
-            # 流式生成响应
-            full_response = ""
-            is_completed = False
-            
-            try:
-                for chunk in self.llm.stream(messages):
-                    # 检查中止标志
-                    if request_id and self.get_abort_flag():
-                        self.logger.info("流式生成被中止")
-                        yield "[系统提示] 输出已中止"
-                        break
-                    
-                    if chunk.content:
-                        full_response += chunk.content
-                        yield chunk.content
-                else:
-                    # 循环正常完成（没有被break）
-                    is_completed = True
-            finally:
-                # 只有当响应完整生成（没有中途停止）时，才保存到历史消息
-                if is_completed and full_response:
-                    with self.history_lock:
-                        self.chat_history.append(AIMessage(content=full_response))
-            
-        except Exception as e:
-            self.logger.error(f"LLM生成失败: {e}")
-            if stream:
-                yield f"生成响应失败: {str(e)}"
-            else:
-                return f"生成响应失败: {str(e)}"
-        finally:
-            # 重置中止标志
-            if stream and request_id:
-                self.set_abort_flag(False, request_id)
-    
     def set_abort_flag(self, flag: bool, request_id: str = None):
-        """设置中止标志"""
+        """设置中止标志
+        如果request_id为None，则中止所有请求
+        """
         with self.abort_lock:
-            if request_id is None or self.request_id == request_id:
+            if request_id is None:
+                # 中止所有请求
+                self.abort_flag = flag
+                self.logger.info(f"设置全局中止标志: {flag}")
+                return True
+            elif self.request_id == request_id:
+                # 中止特定请求
                 self.abort_flag = flag
                 self.logger.info(f"设置中止标志: {flag}, 请求ID: {request_id}")
                 return True
             return False
+    
+    def cleanup(self):
+        """清理LLM客户端资源"""
+        self.logger.info("清理LLM客户端资源...")
+        # 中止所有正在进行的请求
+        self.set_abort_flag(True)  # 不带request_id会中止所有请求
+        
+        # 清理会话历史
+        self.clear_chat_history()
+        
+        # 重置请求ID
+        with self.request_lock:
+            self.request_id = None
+        
+        self.logger.info("LLM客户端资源清理完成")
     
     def get_abort_flag(self) -> bool:
         """获取中止标志"""
@@ -221,6 +176,74 @@ class LLMClient:
                 "type": "error",
                 "content": f"处理请求失败: {str(e)}"
             }
+        finally:
+            # 重置中止标志
+            if stream and request_id:
+                self.set_abort_flag(False, request_id)
+
+    def generate(self, prompt: str, stream: bool = True, request_id: str = None, session_id: Optional[str] = None):
+        """生成文本响应，支持流式输出和历史消息参考"""
+        try:
+            system_prompt = f"""
+            你是一个Python编程教育助手。请根据用户的问题和提供的上下文，回答问题。
+            """
+
+            # 构造消息列表，包含系统消息和历史消息
+            messages = [SystemMessage(content=system_prompt)]
+            
+            # 获取并添加历史消息
+            with self.history_lock:
+                messages.extend(self.chat_history.copy())
+            
+            # 添加当前用户消息
+            messages.append(HumanMessage(content=prompt))
+            
+            # 非流式输出
+            if not stream:
+                response = self.llm.invoke(messages)
+                
+                # 保存AI回答到历史消息
+                with self.history_lock:
+                    self.chat_history.append(AIMessage(content=response.content))
+                
+                return response.content
+            
+            # 流式输出
+            # 设置请求ID和重置中止标志
+            if request_id:
+                self.set_request_id(request_id)
+                self.set_abort_flag(False, request_id)
+                
+            # 流式生成响应
+            full_response = ""
+            is_completed = False
+            
+            try:
+                for chunk in self.llm.stream(messages):
+                    # 检查中止标志
+                    if request_id and self.get_abort_flag():
+                        self.logger.info("流式生成被中止")
+                        yield "[系统提示] 输出已中止"
+                        break
+                    
+                    if chunk.content:
+                        full_response += chunk.content
+                        yield chunk.content
+                else:
+                    # 循环正常完成（没有被break）
+                    is_completed = True
+            finally:
+                # 只有当响应完整生成（没有中途停止）时，才保存到历史消息
+                if is_completed and full_response:
+                    with self.history_lock:
+                        self.chat_history.append(AIMessage(content=full_response))
+            
+        except Exception as e:
+            self.logger.error(f"LLM生成失败: {e}")
+            if stream:
+                yield f"生成响应失败: {str(e)}"
+            else:
+                return f"生成响应失败: {str(e)}"
         finally:
             # 重置中止标志
             if stream and request_id:

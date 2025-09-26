@@ -6,6 +6,9 @@ import sys
 import json
 import asyncio
 import uuid
+import signal
+import asyncio
+from uvicorn import Config, Server
 from typing import Dict, List, Any, Optional, Generator
 import uvicorn
 from fastapi import FastAPI, HTTPException, Depends, Request
@@ -203,18 +206,41 @@ def create_app(education_system: PythonEducationSystem, config: SystemConfig) ->
 
 def start_server(education_system: PythonEducationSystem, config: SystemConfig):
     """启动API服务器"""
+    
     logger = get_logger("api_server")
     
     # 创建FastAPI应用
     app = create_app(education_system, config)
     
-    logger.info(f"API服务器启动在端口 {config.api_port}...")
-    logger.info(f"请访问 http://localhost:{config.api_port} 查看API文档")
-    
-    # 启动服务器
-    uvicorn.run(
+    # 创建服务器配置
+    config_uvicorn = Config(
         app,
         host="0.0.0.0",
         port=config.api_port,
-        reload=config.debug
+        reload=config.debug,
+        log_level="info"
     )
+    
+    # 创建服务器实例
+    server_instance = Server(config_uvicorn)
+    
+    logger.info(f"API服务器启动在端口 {config.api_port}...")
+    logger.info(f"请访问 http://localhost:{config.api_port} 查看API文档")
+    print(f"API服务器启动在端口 {config.api_port}...")
+    print("按Ctrl+C可以关闭服务器并清理相关进程")
+    
+    try:
+        # 运行服务器
+        asyncio.run(server_instance.serve())
+        
+    except KeyboardInterrupt:
+        # 处理Ctrl+C中断
+        logger.info("用户中断，正在关闭服务器并清理进程...")
+        print("用户中断，正在关闭服务器并清理进程...")
+        
+    except Exception as e:
+        logger.error(f"服务器异常退出: {e}")
+        # 确保资源释放
+        if hasattr(education_system, 'cleanup'):
+            education_system.cleanup()
+        raise

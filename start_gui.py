@@ -104,18 +104,53 @@ def start_gui():
             shell=True
         )
         
-        # 等待GUI进程结束
-        gui_process.wait()
+        # 等待GUI进程结束，添加KeyboardInterrupt捕获
+        try:
+            gui_process.wait()
+            
+        except KeyboardInterrupt:
+            print("\n用户中断，正在关闭所有服务和清理资源...")
+            
+            # 先尝试清理并终止后端服务
+            try:
+                # 导入并调用clear_main函数清理进程
+                from fix_code_update_issue import clear_main
+                clear_main()
+            except Exception as e:
+                print(f"执行进程清理时出错: {e}")
+            
+            # 然后确保GUI进程也被终止
+            if gui_process.poll() is None:  # 如果进程仍在运行
+                try:
+                    if os.name == 'nt':
+                        subprocess.run(f"taskkill /F /PID {gui_process.pid} /T", shell=True)
+                    else:
+                        gui_process.terminate()
+                        gui_process.wait(timeout=5)
+                except:
+                    pass
+            
+            sys.exit(0)
         
-        # 如果我们启动了后端进程，在GUI关闭后也关闭后端
+        # 如果GUI正常退出，也关闭后端服务并清理资源
         if backend_process and check_backend_status(config):
             print("正在关闭后端服务...")
-            # 在Windows上，我们需要使用taskkill来终止进程树
-            if os.name == 'nt':  # Windows系统
-                subprocess.run(f"taskkill /F /PID {backend_process.pid} /T", shell=True)
-            else:  # Unix-like系统
-                backend_process.terminate()
-                backend_process.wait()
+            try:
+                # 使用taskkill终止后端进程树
+                if os.name == 'nt':  # Windows系统
+                    subprocess.run(f"taskkill /F /PID {backend_process.pid} /T", shell=True)
+                else:  # Unix-like系统
+                    backend_process.terminate()
+                    backend_process.wait()
+                
+                # 调用clear_main函数确保完全清理
+                try:
+                    from fix_code_update_issue import clear_main
+                    clear_main()
+                except Exception as e:
+                    print(f"执行进程清理时出错: {e}")
+            except Exception as e:
+                print(f"关闭后端服务时出错: {e}")
         
     except Exception as e:
         print(f"启动GUI界面失败: {e}")
@@ -127,6 +162,13 @@ def start_gui():
                 else:
                     backend_process.terminate()
                     backend_process.wait()
+                
+                # 调用clear_main函数确保完全清理
+                try:
+                    from fix_code_update_issue import clear_main
+                    clear_main()
+                except Exception as e:
+                    print(f"执行进程清理时出错: {e}")
             except:
                 pass
         sys.exit(1)

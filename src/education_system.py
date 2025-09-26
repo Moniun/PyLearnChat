@@ -162,6 +162,53 @@ class PythonEducationSystem:
                 "error": str(e)
             }
     
+    def cleanup(self):
+        """清理资源，确保所有进程和线程能够正确关闭"""
+        self.logger.info("开始清理教育系统资源...")
+        
+        try:
+            # 中止所有正在进行的流式生成
+            if hasattr(self.llm_client, 'set_abort_flag'):
+                self.logger.info("中止所有正在进行的LLM流式生成...")
+                self.llm_client.set_abort_flag(True)  # 不带request_id会中止所有请求
+            
+            # 清理RAG管理器资源
+            if hasattr(self.rag_manager, 'cleanup'):
+                self.logger.info("清理RAG管理器资源...")
+                self.rag_manager.cleanup()
+            
+            # 清理CodeExecutor资源
+            if hasattr(self, 'code_executor') and hasattr(self.code_executor, 'cleanup'):
+                self.logger.info("清理代码执行器资源...")
+                self.code_executor.cleanup()
+            
+            # 等待所有线程终止
+            import threading
+            import time
+            active_threads = threading.enumerate()
+            self.logger.info(f"当前活跃线程数: {len(active_threads)}")
+            
+            # 等待除主线程外的其他线程终止（最多等待5秒）
+            main_thread = threading.current_thread()
+            threads_to_wait = [t for t in active_threads if t != main_thread and t.name != 'MainThread']
+            
+            if threads_to_wait:
+                self.logger.info(f"等待{len(threads_to_wait)}个线程终止...")
+                wait_time = 0
+                while threads_to_wait and wait_time < 5:
+                    time.sleep(0.1)
+                    wait_time += 0.1
+                    threads_to_wait = [t for t in threads_to_wait if t.is_alive()]
+                
+                # 强制终止仍然活跃的线程（如果有）
+                if threads_to_wait:
+                    self.logger.warning(f"仍有{len(threads_to_wait)}个线程未终止，可能需要强制关闭")
+            
+            self.logger.info("教育系统资源清理完成")
+            
+        except Exception as e:
+            self.logger.error(f"清理资源时发生错误: {e}")
+    
     def generate_quiz(self, topic: str, difficulty: str = "medium", num_questions: int = 5, request_id: str = None):
         """根据主题生成编程测验"""
         try:
