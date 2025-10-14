@@ -12,6 +12,9 @@ gradio>=4.0.0
 # 教育相关依赖
 sympy>=1.12
 pytest>=7.4.0
+
+# 文本编码依赖
+sentence-transformers>=2.2.0
 # 数据处理依赖
 pandas>=2.0.0
 numpy>=1.24.0

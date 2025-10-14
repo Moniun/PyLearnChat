@@ -20,3 +20,13 @@ allowed_functions:
   - "explain_concept"
   - "search_knowledge"
   - "other_questions"
+
+# Hippo模型配置
+hippo:
+  input_dim: 384       # 输入维度（与text_encoder输出匹配）
+  hidden_dim: 128      # 隐藏状态(压缩信息)维度
+  hippo_type: "LegS"   # Hippo矩阵类型，可选'LegT', 'LagT', 'LegS'
+  middle_dim: 1024     # 编码器/解码器中间层维度
+  ffn_dim: 512         # 解码器FFN层维度
+  output_dim: 512      # 最终输出维度
+  text_encoder_path: "D:/models/all-MiniLM-L6-v2"  # 文本编码器本地路径

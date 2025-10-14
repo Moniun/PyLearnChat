@@ -25,10 +25,22 @@ class RAGConfig(BaseModel):
     embedding_model: str = "text-embedding-ada-002"
 
 
+class HippoConfig(BaseModel):
+    """Hippo模型配置"""
+    input_dim: int = 384
+    hidden_dim: int = 128
+    hippo_type: str = "LegS"
+    middle_dim: int = 1024
+    ffn_dim: int = 512
+    output_dim: int = 512
+    text_encoder_path: str = "D:/models/all-MiniLM-L6-v2"
+
+
 class SystemConfig(BaseModel):
     """系统配置"""
     llm: LLMConfig
     rag: RAGConfig
+    hippo: HippoConfig = Field(default_factory=HippoConfig)
     api_port: int = 8888
     debug: bool = False
     data_dir: str = "./data"
@@ -51,7 +63,8 @@ def load_config(config_path: str = "./config.yaml") -> SystemConfig:
         
         default_config = SystemConfig(
             llm=LLMConfig(api_key=api_key_from_env or "your-api-key-here"),
-            rag=RAGConfig()
+            rag=RAGConfig(),
+            hippo=HippoConfig()
         )
         
         # 确保目录存在
