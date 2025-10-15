@@ -30,3 +30,12 @@ hippo:
   ffn_dim: 512         # 解码器FFN层维度
   output_dim: 512      # 最终输出维度
   text_encoder_path: "D:/models/all-MiniLM-L6-v2"  # 文本编码器本地路径
+  
+  # 训练相关配置
+  data_path: "dialogues_no_kw.json"  # 数据保存路径
+  num_samples: 800  # 生成的样本数量
+  max_seq_len: 10  # 最大对话轮数
+  save_path: "hippo_no_kw_model.pt"  # 模型保存路径
+  epochs: 8  # 训练轮数
+  batch_size: 4  # 批次大小
+  lr: 0.0001  # 学习率

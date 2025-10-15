@@ -34,6 +34,15 @@ class HippoConfig(BaseModel):
     ffn_dim: int = 512
     output_dim: int = 512
     text_encoder_path: str = "D:/models/all-MiniLM-L6-v2"
+    
+    # 训练相关配置
+    data_path: str = "dialogues_no_kw.json"  # 数据保存路径
+    num_samples: int = 800  # 生成的样本数量
+    max_seq_len: int = 10  # 最大对话轮数
+    save_path: str = "hippo_no_kw_model.pt"  # 模型保存路径
+    epochs: int = 8  # 训练轮数
+    batch_size: int = 4  # 批次大小
+    lr: float = 1e-4  # 学习率
 
 
 class SystemConfig(BaseModel):

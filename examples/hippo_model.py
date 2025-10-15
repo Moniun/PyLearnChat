@@ -49,7 +49,7 @@ class HippoModel(nn.Module):
         ).to(self.device)
                 
         # 文本编码器：将原始文本转为向量（使用预训练模型）
-        self.text_encoder = SentenceTransformer("D:/models/all-MiniLM-L6-v2").to(self.device)
+        self.text_encoder = SentenceTransformer(text_encoder_name).to(self.device)
         
         
         # 解码器：将最终隐藏状态映射到输出维度
