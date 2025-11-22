@@ -291,7 +291,7 @@ class PythonEducationSystemGradio:
                 with gr.Column(scale=1):
                     chatbot = gr.Chatbot(
                         value=self.chat_history,
-                        label="对话历史",
+                        label="Historical dialogue",
                         height=450,  # 减小高度以适应屏幕
                         elem_id="custom-chatbot"  # 添加ID用于自定义CSS
                     )
@@ -299,7 +299,7 @@ class PythonEducationSystemGradio:
                     # 创建带悬浮按钮的输入区域
                     with gr.Row(elem_id="chat-input-container"):
                         message = gr.Textbox(
-                            placeholder="有问题，尽管问",
+                            placeholder="Ask any questions you have",
                             show_label=False,
                             scale=1,
                             container=False,  # 不使用默认容器
@@ -337,8 +337,8 @@ class PythonEducationSystemGradio:
                     with gr.Row(elem_id="code-input-container"):
                         code_input = gr.Code(
                             language="python",
-                            label="Python代码编辑器",
-                            value="# 在这里输入Python代码\nprint('Hello, Python!')\n",
+                            label="Code editor",
+                            value="# Enter Python code here.\nprint('Hello, Python!')\n",
                             lines=20,  # 减小行数以适应屏幕
                             scale=1,
                             interactive=True
@@ -350,7 +350,7 @@ class PythonEducationSystemGradio:
                         )
                     
                     code_output = gr.Textbox(
-                        label="执行结果",
+                        label="Execution result",
                         lines=6,
                         interactive=False
                     )
